@@ -4,7 +4,7 @@ import yfinance as yf
 import pandas as pd
 import requests
 import matplotlib.pyplot as plt
-import pandas_ta as ta  # Changed from talib to avoid installation issues
+import pandas_ta as ta
 from datetime import datetime, timedelta
 
 # Configure page
@@ -22,14 +22,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# API Configuration (Use Streamlit Secrets)
-if 'LUNARCRUSH_KEY' in st.secrets:
-    LUNARCRUSH_KEY = st.secrets['LUNARCRUSH_KEY']
-else:
-    st.error("Missing LunarCrush API key in secrets")
-
-ALTERNATIVE_API = "https://api.alternative.me"
+# API Endpoints
 COINGECKO_API = "https://api.coingecko.com/api/v3"
+ALTERNATIVE_API = "https://api.alternative.me"
 
 # Helper functions
 @st.cache_data(ttl=300)
@@ -51,23 +46,19 @@ def get_fear_greed():
 @st.cache_data(ttl=600)
 def get_social_metrics():
     try:
-        # LunarCrush Social Metrics
-        lc_res = requests.get(
-            f"https://api.lunarcrush.com/v2?data=assets&key={LUNARCRUSH_KEY}&symbol=BTC&data_points=1",
-            timeout=10
-        )
-        lc_data = lc_res.json()['data'][0]
-        
-        # CoinGecko Social Data
+        # CoinGecko Community Data
         cg_res = requests.get(f"{COINGECKO_API}/coins/bitcoin", timeout=10)
         cg_data = cg_res.json()
         
+        # Alternative.me Social Data
+        alt_res = requests.get(f"{ALTERNATIVE_API}/social/", timeout=10)
+        alt_data = alt_res.json()
+        
         return {
-            'social_volume': lc_data.get('social_volume', 'N/A'),
-            'sentiment': lc_data.get('sentiment', 'N/A'),
-            'galaxy_score': lc_data.get('galaxy_score', 'N/A'),
             'twitter_followers': cg_data['community_data']['twitter_followers'],
-            'reddit_subscribers': cg_data['community_data']['reddit_subscribers']
+            'reddit_subscribers': cg_data['community_data']['reddit_subscribers'],
+            'active_addresses': cg_data['community_data']['active_addresses'],
+            'social_score': alt_data['data']['social_score']
         }
     except Exception as e:
         st.error(f"Social Metrics Error: {str(e)}")
@@ -80,7 +71,6 @@ def get_historical_data(interval='1h', days=7):
     return data
 
 def calculate_technicals(df):
-    # Using pandas_ta instead of talib
     df.ta.rsi(length=14, append=True)
     df.ta.macd(append=True)
     df.ta.sma(length=20, append=True)
@@ -110,11 +100,10 @@ def main():
         if social_data:
             st.markdown(f"""
             <div class="metric-box">
-                <div class="small-font">📈 Social Volume: {social_data['social_volume']:,}</div>
-                <div class="small-font">😃 Sentiment: {social_data['sentiment']}</div>
-                <div class="small-font">🌌 Galaxy Score: {social_data['galaxy_score']}/100</div>
                 <div class="small-font">🐦 Twitter Followers: {social_data['twitter_followers']:,}</div>
                 <div class="small-font">🎮 Reddit Subscribers: {social_data['reddit_subscribers']:,}</div>
+                <div class="small-font">📈 Active Addresses: {social_data['active_addresses']:,}</div>
+                <div class="small-font">📱 Social Score: {social_data['social_score']}/100</div>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -174,19 +163,16 @@ def main():
     st.subheader("Trading Advice")
     advice = []
     
-    # RSI based
     if rsi > 70:
         advice.append("Consider taking profits - RSI indicates overbought condition")
     elif rsi < 30:
         advice.append("Potential buying opportunity - RSI indicates oversold condition")
     
-    # MACD based
     if macd > signal + 1.0:
         advice.append("Strong bullish momentum - MACD above signal line")
     elif macd < signal - 1.0:
         advice.append("Bearish momentum building - MACD below signal line")
     
-    # Bollinger Bands
     if data['Close'].iloc[-1] > data['BBU_20_2.0'].iloc[-1]:
         advice.append("Price above upper Bollinger Band - possible mean reversion")
     elif data['Close'].iloc[-1] < data['BBL_20_2.0'].iloc[-1]:
